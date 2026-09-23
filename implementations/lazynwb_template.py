@@ -9,7 +9,7 @@
 #   "neurodatabench",
 # ]
 # [tool.uv.sources]
-# neurodatabench = { path = "..", editable = true }
+# neurodatabench = { git = "https://github.com/bjhardcastle/neurodatabench" }
 # ///
 
 """Version-agnostic lazynwb implementation for packaged NWB benchmarks."""
@@ -60,22 +60,22 @@ def setup(context: neurodatabench.RunContext) -> None:
     _configure_backend(_backend())
     state.clear()
 
-    #state["units"] = lazynwb.scan_nwb(
-    #     context.benchmark.data_sources,
-    #    "/units",
-    #    disable_progress=True,
-    #    infer_schema_length=1,
-    #)
     state["trials"] = lazynwb.scan_nwb(
         context.benchmark.data_sources,
         "/intervals/trials",
         disable_progress=True,
     )
-    #state["facemap_side_camera"] = lazynwb.get_timeseries(
-    #    context.benchmark.data_sources[0],
-    #   "/processing/behavior/facemap_side_camera",
-    #    exact_path=True,
-    #)
+
+def get_units(context: neurodatabench.RunContext) -> pl.DataFrame:
+    """Retrieve the units table from the lazynwb catalog."""
+    if "units" not in state:
+        state["units"] = lazynwb.scan_nwb(
+            context.benchmark.data_sources,
+            "/units",
+            disable_progress=True,
+            infer_schema_length=1,
+        )
+    return state["units"]
 
 
 def submit_answers(context: neurodatabench.RunContext) -> None:
@@ -84,8 +84,9 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
         logger.debug("Answering benchmark question %s.", question.id)
         match question.id:
             case "multisession_units_metadata_query":
+                units = get_units(context)
                 answer = int(
-                    state["units"]
+                    units
                     .filter(
                         pl.col("structure").eq("VISp"),
                         pl.col("default_qc"),
@@ -95,7 +96,8 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
                     .item()
                 )
             case "predicated_spike_times":
-                answer = _longest_isi_for_fastest_visp_unit(state["units"])
+                units = get_units(context)
+                answer = _longest_isi_for_fastest_visp_unit(units)
             case "multisession_table_query":
                 answer = float(
                     state["trials"]
@@ -114,6 +116,12 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
             case "behavior_large_array":
                 answer = _running_speed_block_mean(context.benchmark.data_sources[0])
             case "large_array":
+                state["facemap_side_camera"] = lazynwb.get_timeseries(
+                    context.benchmark.data_sources[0],
+                    "/processing/behavior/facemap_side_camera",
+                    exact_path=True,
+                )
+            
                 data = np.asarray(
                     state["facemap_side_camera"].data[
                         :_FACEMAP_DOWNLOAD_ROWS,

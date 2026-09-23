@@ -13,7 +13,7 @@
 #   "neurodatabench",
 # ]
 # [tool.uv.sources]
-# neurodatabench = { path = "..", editable = true }
+# neurodatabench = { git = "https://github.com/bjhardcastle/neurodatabench" }
 # ///
 
 """Runnable direct Zarr implementation for the packaged NWB benchmark."""

@@ -14,7 +14,7 @@
 #   "neurodatabench",
 # ]
 # [tool.uv.sources]
-# neurodatabench = { path = "..", editable = true }
+# neurodatabench = { git = "https://github.com/bjhardcastle/neurodatabench" }
 # ///
 
 """Run a true PyNWB NWBZarrIO materialization benchmark against remote Zarr."""
