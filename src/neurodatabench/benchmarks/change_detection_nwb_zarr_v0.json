@@ -26,7 +26,7 @@
       "answer": 0.48366063694213346
     },
     {
-      "id": "behavior_large_array",
+      "id": "change_detection_large_array",
       "text": "In the first session, read the first 20,000 samples (indices 0 through 19,999) from `processing/running/speed/data`. What is the mean value of this block?",
       "answer": 18.863415134704702
     }
