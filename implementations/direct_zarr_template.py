@@ -78,8 +78,8 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
                 answer = _max_speed_stimulus(context.benchmark.data_sources[0])
             case "multisession_lick_rate_average":
                 answer = _multisession_lick_rate_average(context.benchmark.data_sources)
-            case "behavior_large_array":
-                answer = _running_speed_block_mean(context.benchmark.data_sources[0])
+            case "change_detection_large_array":
+                answer = _change_detection_large_array(context.benchmark.data_sources[0])
             case _:
                 raise ValueError(f"Unsupported benchmark question: {question.id}")
         context.submit_answer(question.id, answer)
@@ -364,7 +364,7 @@ def _multisession_lick_rate_average(data_sources: list[str]) -> float:
     return float(best_rate)
 
 
-def _running_speed_block_mean(first_session_path: str) -> float:
+def _change_detection_large_array(first_session_path: str) -> float:
     """Mean of the first 20,000 samples of `processing/running/speed/data`."""
     store = _open_store(first_session_path)
     data = np.asarray(

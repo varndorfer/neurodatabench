@@ -113,8 +113,8 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
                 answer = _max_speed_stimulus(context.benchmark.data_sources[0])
             case "multisession_lick_rate_average":
                 answer = _multisession_lick_rate_average(context.benchmark.data_sources)
-            case "behavior_large_array":
-                answer = _running_speed_block_mean(context.benchmark.data_sources[0])
+            case "change_detection_large_array":
+                answer = _change_detection_large_array(context.benchmark.data_sources[0])
             case "large_array":
                 state["facemap_side_camera"] = lazynwb.get_timeseries(
                     context.benchmark.data_sources[0],
@@ -267,7 +267,7 @@ def _multisession_lick_rate_average(nwb_paths: list[str]) -> float:
     return float(rates["lick_rate_hz"][0])
 
 
-def _running_speed_block_mean(nwb_path: str) -> float:
+def _change_detection_large_array(nwb_path: str) -> float:
     """Return the mean of the first 20,000 samples (indices 0 through 19,999)
     of `processing/running/speed/data` in the first session."""
     speed = lazynwb.get_timeseries(
