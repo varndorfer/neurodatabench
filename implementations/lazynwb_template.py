@@ -36,6 +36,7 @@ _DEFAULT_BACKEND = "obstore"
 _DEFAULT_BENCHMARK = "dynamic_routing_nwb_hdf5_v0"
 _FACEMAP_DOWNLOAD_ROWS = 12_850
 _FACEMAP_DOWNLOAD_COLUMNS = 128
+_RUNNING_SPEED_DOWNLOAD_SAMPLES = 20_000
 
 
 def clear_cache(context: neurodatabench.RunContext) -> None:
@@ -59,22 +60,22 @@ def setup(context: neurodatabench.RunContext) -> None:
     _configure_backend(_backend())
     state.clear()
 
-    state["units"] = lazynwb.scan_nwb(
-        context.benchmark.data_sources,
-        "/units",
-        disable_progress=True,
-        infer_schema_length=1,
-    )
     state["trials"] = lazynwb.scan_nwb(
         context.benchmark.data_sources,
         "/intervals/trials",
         disable_progress=True,
     )
-    state["facemap_side_camera"] = lazynwb.get_timeseries(
-        context.benchmark.data_sources[0],
-        "/processing/behavior/facemap_side_camera",
-        exact_path=True,
-    )
+
+def get_units(context: neurodatabench.RunContext) -> pl.DataFrame:
+    """Retrieve the units table from the lazynwb catalog."""
+    if "units" not in state:
+        state["units"] = lazynwb.scan_nwb(
+            context.benchmark.data_sources,
+            "/units",
+            disable_progress=True,
+            infer_schema_length=1,
+        )
+    return state["units"]
 
 
 def submit_answers(context: neurodatabench.RunContext) -> None:
@@ -83,8 +84,9 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
         logger.debug("Answering benchmark question %s.", question.id)
         match question.id:
             case "multisession_units_metadata_query":
+                units = get_units(context)
                 answer = int(
-                    state["units"]
+                    units
                     .filter(
                         pl.col("structure").eq("VISp"),
                         pl.col("default_qc"),
@@ -94,7 +96,8 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
                     .item()
                 )
             case "predicated_spike_times":
-                answer = _longest_isi_for_fastest_visp_unit(state["units"])
+                units = get_units(context)
+                answer = _longest_isi_for_fastest_visp_unit(units)
             case "multisession_table_query":
                 answer = float(
                     state["trials"]
@@ -104,7 +107,21 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
                     .collect()
                     .item()
                 )
+            case "multisession_trials_hit_rate":
+                answer = _multisession_trials_hit_rate(state["trials"])
+            case "max_speed_stimulus":
+                answer = _max_speed_stimulus(context.benchmark.data_sources[0])
+            case "multisession_lick_rate_average":
+                answer = _multisession_lick_rate_average(context.benchmark.data_sources)
+            case "change_detection_large_array":
+                answer = _change_detection_large_array(context.benchmark.data_sources[0])
             case "large_array":
+                state["facemap_side_camera"] = lazynwb.get_timeseries(
+                    context.benchmark.data_sources[0],
+                    "/processing/behavior/facemap_side_camera",
+                    exact_path=True,
+                )
+            
                 data = np.asarray(
                     state["facemap_side_camera"].data[
                         :_FACEMAP_DOWNLOAD_ROWS,
@@ -170,6 +187,99 @@ def _longest_isi_for_fastest_visp_unit(units: pl.LazyFrame) -> float:
         )
     spike_times = np.asarray(selected_unit["spike_times"].item(), dtype=np.float64)
     return float(np.diff(spike_times).max())
+
+
+def _multisession_trials_hit_rate(trials: pl.LazyFrame) -> float:
+    """Return the fraction of go trials in `intervals/trials` that were hits,
+    summed across all sessions."""
+
+    all_hit = (
+        trials
+        .select(pl.col('hit'))
+        .collect()
+    )
+    hit_only = all_hit.filter(pl.col('hit').eq(True))
+    return float(hit_only.height / all_hit.height)
+
+
+def _max_speed_stimulus(nwb_path: str) -> str:
+    """Return the stimulus in `intervals/stimulus_presentations` with the
+    highest mean running speed (cm/s) in the first session."""
+    stim = lazynwb.scan_nwb(nwb_path, '/intervals/stimulus_presentations')
+    # get start_time and stop_time
+    stim_lf = stim.select('image_name', 'start_time', 'stop_time').collect()
+    speed = lazynwb.scan_nwb(nwb_path, '/processing/running/speed')
+    speed_lf = (
+        speed
+        .select('data', 'timestamps')
+        .collect()
+    )
+    # assign each speed sample to the presentation whose start_time most
+    # recently precedes it, then keep only samples inside the presentation
+    samples = (
+        speed_lf
+        .sort('timestamps')
+        .join_asof(
+            stim_lf.sort('start_time'),
+            left_on='timestamps',
+            right_on='start_time',
+            strategy='backward',
+        )
+        .filter(pl.col('timestamps') < pl.col('stop_time'))
+    )
+    return str(
+        samples
+        .group_by('image_name')
+        .agg(pl.col('data').mean().alias('mean_speed'))
+        .sort('mean_speed', descending=True)
+        .head(1)['image_name']
+        .item()
+    )
+
+
+
+def _multisession_lick_rate_average(nwb_paths: list[str]) -> float:
+    """Return the highest per-session average lick rate, computed from the
+    `events/events` table of each session as lick count / event-time span
+    (licks per second)."""
+    events = lazynwb.scan_nwb(
+        nwb_paths,
+        "/events/events",
+        disable_progress=True,
+    )
+    rates = (
+        events
+        .select(
+            lazynwb.NWB_PATH_COLUMN_NAME,
+            "event_type",
+            "timestamp",
+        )
+        .group_by(lazynwb.NWB_PATH_COLUMN_NAME)
+        .agg(
+            (
+                pl.col("event_type").eq("lick").sum()
+                / (pl.col("timestamp").max() - pl.col("timestamp").min())
+            ).alias("lick_rate_hz")
+        )
+        .sort("lick_rate_hz", descending=True)
+        .collect()
+    )
+    return float(rates["lick_rate_hz"][0])
+
+
+def _change_detection_large_array(nwb_path: str) -> float:
+    """Return the mean of the first 20,000 samples (indices 0 through 19,999)
+    of `processing/running/speed/data` in the first session."""
+    speed = lazynwb.get_timeseries(
+        nwb_path,
+        "/processing/running/speed",
+        exact_path=True,
+    )
+    data = np.asarray(
+        speed.data[:_RUNNING_SPEED_DOWNLOAD_SAMPLES],
+        dtype=np.float64,
+    )
+    return float(np.mean(data))
 
 
 def _backend() -> str:

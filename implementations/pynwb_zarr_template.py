@@ -36,6 +36,7 @@ _DEFAULT_BENCHMARK = "dynamic_routing_nwb_zarr_v0"
 _DEFAULT_IMPLEMENTATION_ID = "pynwb_hdmf_zarr_direct"
 _FACEMAP_DOWNLOAD_ROWS = 12_850
 _FACEMAP_DOWNLOAD_COLUMNS = 128
+_RUNNING_SPEED_DOWNLOAD_SAMPLES = 20_000
 
 
 def setup(context: neurodatabench.RunContext) -> None:
@@ -85,6 +86,14 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
                 answer = _multisession_table_query(files)
             case "large_array":
                 answer = _large_array(files)
+            case "multisession_trials_hit_rate":
+                answer = _multisession_trials_hit_rate(files)
+            case "max_speed_stimulus":
+                answer = _max_speed_stimulus(files[0])
+            case "multisession_lick_rate_average":
+                answer = _multisession_lick_rate_average(files)
+            case "change_detection_large_array":
+                answer = _change_detection_large_array(files[0])
             case _:
                 raise ValueError(f"Unsupported benchmark question: {question.id}")
         context.submit_answer(question.id, answer)
@@ -214,6 +223,94 @@ def _large_array(file_records: list[dict[str, Any]]) -> float:
     data = np.asarray(
         facemap.data[:_FACEMAP_DOWNLOAD_ROWS, :_FACEMAP_DOWNLOAD_COLUMNS],
         dtype=np.float32,
+    )
+    return float(np.mean(data, dtype=np.float64))
+
+
+def _multisession_trials_hit_rate(file_records: list[dict[str, Any]]) -> float:
+    """Fraction of `intervals/trials` rows that were hits across all sessions."""
+    total_trials = 0
+    total_hits = 0
+
+    for file_record in file_records:
+        if "trials_frame" not in file_record:
+            nwb_file = file_record["nwb_file"]
+            if nwb_file.trials is None:
+                raise ValueError(
+                    f"NWBFile {nwb_file.identifier} does not contain trials.",
+                )
+            file_record["trials_frame"] = nwb_file.trials.to_dataframe()
+        trials = file_record["trials_frame"]
+        hit = np.asarray(trials["hit"], dtype=np.bool_)
+        total_hits += int(np.count_nonzero(hit))
+        total_trials += int(hit.size)
+
+    return float(total_hits / total_trials)
+
+
+def _max_speed_stimulus(first_file_record: dict[str, Any]) -> str:
+    """Stimulus with the highest mean running speed in the first session."""
+    nwb_file = first_file_record["nwb_file"]
+    stim = nwb_file.intervals["stimulus_presentations"].to_dataframe()
+    image_name = _string_array(stim["image_name"])
+    start_time = np.asarray(stim["start_time"], dtype=np.float64)
+    stop_time = np.asarray(stim["stop_time"], dtype=np.float64)
+
+    speed_series = nwb_file.processing["running"]["speed"]
+    speed_data = np.asarray(speed_series.data[:], dtype=np.float64)
+    speed_ts = np.asarray(speed_series.timestamps[:], dtype=np.float64)
+
+    # Assign each speed sample to the presentation whose start_time most
+    # recently precedes it (asof match), then keep only samples whose timestamp
+    # is also inside that presentation's [start_time, stop_time] interval.
+    order = np.argsort(start_time)
+    sorted_starts = start_time[order]
+    sorted_stops = stop_time[order]
+    sorted_labels = image_name[order]
+
+    candidate = np.searchsorted(sorted_starts, speed_ts, side="right") - 1
+    within = candidate >= 0
+    clipped = np.where(within, candidate, 0)
+    within &= speed_ts <= sorted_stops[clipped]
+
+    matched_labels = sorted_labels[clipped]
+
+    best_label = ""
+    best_mean = -np.inf
+    for label in np.unique(matched_labels[within]):
+        mask = within & (matched_labels == label)
+        mean_speed = float(speed_data[mask].mean())
+        if mean_speed > best_mean:
+            best_mean = mean_speed
+            best_label = str(label)
+    return best_label
+
+
+def _multisession_lick_rate_average(file_records: list[dict[str, Any]]) -> float:
+    """Highest per-session mean lick rate (licks / second) across sessions."""
+    best_rate = -np.inf
+    for file_record in file_records:
+        nwb_file = file_record["nwb_file"]
+        events = nwb_file.events["events"].to_dataframe()
+        event_type = _string_array(events["event_type"])
+        timestamps = np.asarray(events["timestamp"], dtype=np.float64)
+
+        n_licks = int(np.count_nonzero(event_type == "lick"))
+        duration = float(timestamps.max() - timestamps.min())
+
+        rate = n_licks / duration
+        if rate > best_rate:
+            best_rate = rate
+    return float(best_rate)
+
+
+def _change_detection_large_array(first_file_record: dict[str, Any]) -> float:
+    """Mean of the first 20,000 samples of `processing/running/speed/data`."""
+    nwb_file = first_file_record["nwb_file"]
+    speed_series = nwb_file.processing["running"]["speed"]
+    data = np.asarray(
+        speed_series.data[:_RUNNING_SPEED_DOWNLOAD_SAMPLES],
+        dtype=np.float64,
     )
     return float(np.mean(data, dtype=np.float64))
 

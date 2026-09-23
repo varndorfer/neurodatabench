@@ -1,8 +1,23 @@
-results*/
-benchmark-runs*
-.pytest_cache/
-.venv/
+# Byte-compiled / optimized / DLL files #
 __pycache__/
 *.py[cod]
+*$py.class
+
+# Output directories #
+results*/
+benchmark-runs*
+
+# Unit test / coverage reports #
+.pytest_cache/
+
+# Environments #
+.venv/
+
+# Packages #
 *.zip
+
+# Databases #
 *.sqlite
+
+# Visual Studio Code #
+.vscode/
