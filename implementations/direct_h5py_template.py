@@ -73,7 +73,22 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
             case "multisession_table_query":
                 answer = _multisession_table_query(context.benchmark.data_sources)
             case "large_array":
-                answer = _large_array(context.benchmark.data_sources)
+                if context.benchmark.id.startswith("behavior"):
+                    answer = _large_array_running_speed(
+                        context.benchmark.data_sources,
+                    )
+                else:
+                    answer = _large_array(context.benchmark.data_sources)
+            case "multisession_trials_hit_rate":
+                answer = _multisession_trials_hit_rate(
+                    context.benchmark.data_sources,
+                )
+            case "max_speed_stimulus":
+                answer = _max_speed_stimulus(context.benchmark.data_sources[0])
+            case "multisession_lick_rate_average":
+                answer = _multisession_lick_rate_average(
+                    context.benchmark.data_sources,
+                )
             case _:
                 raise ValueError(f"Unsupported benchmark question: {question.id}")
         context.submit_answer(question.id, answer)
@@ -246,6 +261,52 @@ def _large_array(data_sources: list[str]) -> float:
             dtype=np.float32,
         )
     return float(np.mean(data, dtype=np.float64))
+
+
+def _large_array_running_speed(data_sources: list[str]) -> float:
+    """Mean of the first 20,000 samples of `processing/running/speed/data`.
+
+    Skeleton: open the first NWB file, slice
+    `processing/running/speed/data[:20_000]`, and return the mean as a float.
+    """
+    raise NotImplementedError(
+        "_large_array_running_speed is not yet implemented.",
+    )
+
+
+def _multisession_trials_hit_rate(data_sources: list[str]) -> float:
+    """Fraction of `intervals/trials` rows that were hits across all sessions.
+
+    Skeleton: for each NWB path, open `intervals/trials`, read the `hit` column,
+    accumulate a running sum and count, and return sum / count as a float.
+    """
+    raise NotImplementedError(
+        "_multisession_trials_hit_rate is not yet implemented.",
+    )
+
+
+def _max_speed_stimulus(first_session_path: str) -> str:
+    """Stimulus with the highest mean running speed in the first session.
+
+    Skeleton: open the first NWB file, read `intervals/stimulus_presentations`
+    (start_time, stop_time, stimulus_name/type) and `processing/running/speed`
+    (data + timestamps), group running-speed samples by which stimulus interval
+    they fall inside, and return the stimulus name with the highest mean speed.
+    """
+    raise NotImplementedError("_max_speed_stimulus is not yet implemented.")
+
+
+def _multisession_lick_rate_average(data_sources: list[str]) -> float:
+    """Highest per-session average lick rate across all sessions.
+
+    Skeleton: for each NWB path, open `events/events`, count rows where
+    event_type == 'lick' (or lick_bouts == 'bout_start' if that's the desired
+    definition), divide by session duration to get a per-session lick rate, then
+    return the max across sessions.
+    """
+    raise NotImplementedError(
+        "_multisession_lick_rate_average is not yet implemented.",
+    )
 
 
 if __name__ == "__main__":

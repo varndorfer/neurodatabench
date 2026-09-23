@@ -1,0 +1,34 @@
+{
+  "id": "change_detection_nwb_zarr_v0",
+  "nwb_format": "zarr",
+  "timeout_seconds": 120,
+  "data_sources": [
+    "s3://aind-open-data/multiplane-ophys_804363_2025-08-14_14-24-15_behavior-nwb_2026-08-18_18-10-43/behavior.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_804363_2025-08-15_13-19-14_behavior-nwb_2026-08-18_18-10-44/behavior.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_804363_2025-08-28_14-46-56_behavior-nwb_2026-08-18_18-16-07/behavior.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_804363_2025-09-02_11-50-29_behavior-nwb_2026-08-18_18-16-00/behavior.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_804363_2025-09-04_16-08-45_behavior-nwb_2026-08-18_18-16-00/behavior.nwb.zarr"
+  ],
+  "questions": [
+    {
+      "id": "multisession_trials_hit_rate",
+      "text": "What fraction of trials in `intervals/trials` were hits, summed across all sessions?",
+      "answer": 0.11452810180275716
+    },
+    {
+      "id": "max_speed_stimulus",
+      "text": "In the first session, use the stimulus in the `intervals/stimulus_presentations`, which stimulus had the highest mean running speed (cm/s)?",
+      "answer": "gratings_0"
+    },
+    {
+      "id": "multisession_lick_rate_average",
+      "text": "Using the `events/events` table, find the average lick rate for each session. Which was the highest average lick-rate among all sessions?",
+      "answer": 0.48366063694213346
+    },
+    {
+      "id": "behavior_large_array",
+      "text": "In the first session, read the first 20,000 samples (indices 0 through 19,999) from `processing/running/speed/data`. What is the mean value of this block?",
+      "answer": 18.863415134704702
+    }
+  ]
+}
