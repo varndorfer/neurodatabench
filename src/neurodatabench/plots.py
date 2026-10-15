@@ -26,6 +26,7 @@ _LEADERBOARD_SERIES_COLORS = [
 ]
 _DASHBOARD_COLORS: dict[str, str] = {
     "timing": "#d97706",
+    "metrics": "#ff8ab7",
     "memory": "#e11d48",
     "cpu_process": "#059669",
     "cpu_system": "#7c3aed",
@@ -41,6 +42,7 @@ def _write_result_dashboard(
     out_dir: Path,
     metadata: neurodatabench.models.JsonObject,
     timings: neurodatabench.models.RunTimings,
+    metrics: dict[str, neurodatabench.models.RunMetric],
     profile_samples: list[neurodatabench.models.JsonObject],
     profile_summary: neurodatabench.models.JsonObject,
     run_start_wall_time_ns: int,
@@ -50,6 +52,7 @@ def _write_result_dashboard(
     dashboard = _result_dashboard_chart(
         metadata=metadata,
         timings=timings,
+        metrics=metrics,
         profile_samples=profile_samples,
         profile_summary=profile_summary,
         run_start_wall_time_ns=run_start_wall_time_ns,
@@ -72,8 +75,13 @@ def _write_leaderboard_plot(
         results_dir=results_dir,
         leaderboard_rows=rows,
     )
+    metrics_rows = _leaderboard_metrics_rows(
+        results_dir=results_dir,
+        leaderboard_rows=rows,
+    )
     chart = _leaderboard_plot_chart(
         rows,
+        metrics_rows=metrics_rows,
         memory_profile_rows=memory_rows,
         network_profile_rows=network_rows,
     )
@@ -83,10 +91,11 @@ def _write_leaderboard_plot(
 def _leaderboard_plot_chart(
     rows: list[neurodatabench.models.JsonObject],
     *,
+    metrics_rows: list[dict[str, object]] | None = None,
     memory_profile_rows: list[dict[str, object]] | None = None,
     network_profile_rows: list[dict[str, object]] | None = None,
 ) -> alt.VConcatChart:
-    """Return stage timing, memory, and network comparisons for one benchmark."""
+    """Return stage timing, metrics, memory, and network comparisons for one benchmark."""
     benchmark_ids = {str(row.get("benchmark_id", "unknown")) for row in rows}
     if len(benchmark_ids) != 1:
         raise ValueError("A leaderboard chart must contain exactly one benchmark")
@@ -104,6 +113,31 @@ def _leaderboard_plot_chart(
         rows=rows,
         timing_rows=timing_rows,
         elapsed_limit=elapsed_limit,
+    )
+    metrics_rows = metrics_rows or []
+    metrics_charts = [
+        _leaderboard_metrics_chart(
+            title=metric_name,
+            rows=[row for row in metrics_rows if row["metric"] == metric_name],
+            x_title=next(
+                str(row["x_label"])
+                for row in metrics_rows
+                if row["metric"] == metric_name
+            ),
+            y_title=next(
+                str(row["y_label"])
+                for row in metrics_rows
+                if row["metric"] == metric_name
+            ),
+            profile_series=profile_series,
+            series_colors=series_colors,
+        )
+        for metric_name in dict.fromkeys(str(row["metric"]) for row in metrics_rows)
+    ]
+    metrics_block = (
+        [alt.vconcat(*metrics_charts, spacing=14).resolve_scale(x="independent")]
+        if metrics_charts
+        else []
     )
     memory_chart = _leaderboard_comparison_profile_chart(
         title="Memory profile",
@@ -124,6 +158,7 @@ def _leaderboard_plot_chart(
     return (
         alt.vconcat(
             timing_chart,
+            *metrics_block,
             memory_chart,
             network_chart,
             spacing=14,
@@ -277,6 +312,94 @@ def _leaderboard_timing_chart(
         title="Stage durations",
         width=904,
         height=max(60, min(22 * len(rows), 720)),
+    )
+
+
+def _leaderboard_metrics_rows(
+    *,
+    results_dir: Path,
+    leaderboard_rows: list[neurodatabench.models.JsonObject],
+) -> list[dict[str, object]]:
+    """Load each run's metrics.json as chart rows, one per metric data point."""
+    metric_rows: list[dict[str, object]] = []
+    for leaderboard_row in leaderboard_rows:
+        run_dir = results_dir / str(leaderboard_row["result_dir"])
+        try:
+            metrics = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            logger.debug("Skipping unreadable metrics.json in %s.", run_dir)
+            continue
+        if not isinstance(metrics, dict):
+            continue
+        profile_series = (
+            f"{leaderboard_row['implementation_id']} "
+            f"[{leaderboard_row['source_types']}]"
+        )
+        for metric_name, metric in metrics.items():
+            if not isinstance(metric, dict):
+                continue
+            x_data = metric.get("x_data")
+            y_data = metric.get("y_data")
+            if not isinstance(x_data, list) or not isinstance(y_data, list):
+                continue
+            previous_stop_seconds = 0.0
+            for x_value, y_value in zip(x_data, y_data):
+                load_elapsed_seconds = float(y_value or 0.0)
+                stop_seconds = previous_stop_seconds + load_elapsed_seconds
+                metric_rows.append(
+                    {
+                        "profile_series": profile_series,
+                        "metric": str(metric_name),
+                        "x_label": str(metric.get("x_label", "")),
+                        "y_label": str(metric.get("y_label", "")),
+                        "x": x_value,
+                        "start_seconds": previous_stop_seconds,
+                        "stop_seconds": stop_seconds,
+                        "elapsed_seconds": load_elapsed_seconds,
+                    }
+                )
+                previous_stop_seconds = stop_seconds
+    return metric_rows
+
+
+def _leaderboard_metrics_chart(
+    *,
+    title: str,
+    rows: list[dict[str, object]],
+    x_title: str,
+    y_title: str,
+    profile_series: list[str],
+    series_colors: list[str],
+) -> alt.Chart:
+    """Return one metric plot containing every implementation trace."""
+    return (
+        alt.Chart(alt.Data(values=rows))
+        .mark_line(point=True)
+        .encode(
+            x=alt.X(
+                "x:Q",
+                title=x_title,
+            ),
+            y=alt.Y(
+                "stop_seconds:Q",
+                title=y_title,
+            ),
+            color=alt.Color(
+                "profile_series:N",
+                title="implementation [format]",
+                scale=alt.Scale(domain=profile_series, range=series_colors),
+                legend=alt.Legend(labelLimit=350),
+            ),
+            tooltip=[
+                alt.Tooltip("profile_series:N", title="Implementation"),
+                alt.Tooltip(
+                    "elapsed_seconds:Q", title="Elapsed seconds", format=",.3f"
+                ),
+                alt.Tooltip("x:Q", title=x_title),
+                alt.Tooltip("stop_seconds:Q", title="Load end time", format=",.3f"),
+            ],
+        )
+        .properties(title=title, width=904, height=190)
     )
 
 
@@ -497,6 +620,7 @@ def _result_dashboard_chart(
     *,
     metadata: neurodatabench.models.JsonObject,
     timings: neurodatabench.models.RunTimings,
+    metrics: dict[str, neurodatabench.models.RunMetric],
     profile_samples: list[neurodatabench.models.JsonObject],
     profile_summary: neurodatabench.models.JsonObject,
     run_start_wall_time_ns: int,
@@ -507,9 +631,19 @@ def _result_dashboard_chart(
         profile_samples=profile_samples,
         run_start_wall_time_ns=run_start_wall_time_ns,
     )
+    metrics_charts = [
+        _metrics_summary_chart(metric=v, metric_name=k)
+        for k, v in metrics.items()
+    ]
+    metrics_block = (
+        [alt.vconcat(*metrics_charts, spacing=10).resolve_scale(x="independent")]
+        if metrics_charts
+        else []
+    )
     dashboard = (
         alt.vconcat(
             _timing_summary_chart(timings, time_domain=time_domain),
+            *metrics_block,
             _network_profile_chart(
                 profile_samples=profile_samples,
                 timings=timings,
@@ -650,6 +784,63 @@ def _timing_summary_chart(
             ],
         )
         .properties(title="Benchmark Timing", width=904, height=48)
+    )
+    return chart
+
+
+def _metrics_summary_chart(
+    *,
+    metric: neurodatabench.models.RunMetric,
+    metric_name: str,
+    width: int = 440,
+    height: int = 300,
+) -> alt.Chart:
+    """Return an Altair chart summarizing a single metric."""
+    rows: list[dict[str, object]] = []
+    previous_stop_seconds = 0
+    for m in range(len(metric.y_data)):
+        load_elapsed_seconds = float(metric.y_data[m] or 0.0)
+        stop_seconds = previous_stop_seconds + load_elapsed_seconds
+        rows.append(
+            {
+                "x": metric.x_data[m],
+                "start_seconds": previous_stop_seconds,
+                "stop_seconds": stop_seconds,
+                "elapsed_seconds": load_elapsed_seconds,
+                "metric": f"{metric_name}",
+            }
+        )
+        previous_stop_seconds = stop_seconds
+
+    chart = (
+        alt.Chart(alt.Data(values=rows))
+        .mark_line(point=True)
+        .encode(
+            x=alt.X(
+                "x:Q",
+                title=f"{metric.x_label}",
+            ),
+            y=alt.Y(
+                "stop_seconds:Q", 
+                title=f"{metric.y_label}",
+            ),
+            color=alt.Color(
+                "metric:N",
+                scale=alt.Scale(
+                    domain=[f"{metric_name}"],
+                    range=[_DASHBOARD_COLORS["metrics"]]
+                ),
+                title=None,
+            ),
+            tooltip=[
+                alt.Tooltip(
+                    "elapsed_seconds:Q", title="Elapsed seconds", format=",.3f"
+                ),
+                alt.Tooltip("x:Q", title=f"{metric.x_label}"),
+                alt.Tooltip("stop_seconds:Q", title="Load end time", format=",.3f"),
+            ],
+        )
+        .properties(title=metric_name, width=width, height=height)
     )
     return chart
 

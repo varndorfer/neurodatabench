@@ -1,0 +1,35 @@
+{
+  "id": "baseline_nwb_zarr_v0",
+  "nwb_format": "zarr",
+  "timeout_seconds": 120,
+  "data_sources": {
+    "zarr": [
+      "s3://aind-open-data/707349_2024-04-09_10-02-40_processed_2026-09-11_00-36-22/behavior.nwb.zarr",
+      "s3://aind-open-data/707349_2024-04-09_10-02-40_processed_2026-09-16_02-55-02/behavior.nwb.zarr",
+      "s3://aind-open-data/707349_2024-04-09_10-02-40_processed_2026-09-22_22-59-16/behavior.nwb.zarr",
+      "s3://aind-open-data/707349_2024-04-10_09-52-51_processed_2026-09-11_00-36-22/behavior.nwb.zarr",
+      "s3://aind-open-data/707349_2024-04-10_09-52-51_processed_2026-09-16_02-54-38/behavior.nwb.zarr",
+      "s3://aind-open-data/707349_2024-04-10_09-52-51_processed_2026-09-22_22-59-17/behavior.nwb.zarr",
+      "s3://aind-open-data/707349_2024-04-11_11-23-32_processed_2026-09-11_00-36-15/behavior.nwb.zarr",
+      "s3://aind-open-data/707349_2024-04-11_11-23-32_processed_2026-09-16_02-54-56/behavior.nwb.zarr",
+      "s3://aind-open-data/707349_2024-04-11_11-23-32_processed_2026-09-22_22-59-12/behavior.nwb.zarr",
+      "s3://aind-open-data/707349_2024-04-12_10-15-55_processed_2026-09-11_00-36-22/behavior.nwb.zarr",
+      "s3://aind-open-data/707349_2024-04-12_10-15-55_processed_2026-09-16_02-54-34/behavior.nwb.zarr",
+      "s3://aind-open-data/707349_2024-04-12_10-15-55_processed_2026-09-22_22-59-14/behavior.nwb.zarr",
+      "s3://aind-open-data/707349_2024-04-13_10-59-09_processed_2026-09-11_00-36-22/behavior.nwb.zarr",
+      "s3://aind-open-data/707349_2024-04-13_10-59-09_processed_2026-09-16_02-54-34/behavior.nwb.zarr",
+      "s3://aind-open-data/707349_2024-04-13_10-59-09_processed_2026-09-22_22-59-13/behavior.nwb.zarr",
+      "s3://aind-open-data/707349_2024-04-15_10-13-27_processed_2026-09-11_00-36-23/behavior.nwb.zarr",
+      "s3://aind-open-data/707349_2024-04-15_10-13-27_processed_2026-09-16_02-54-38/behavior.nwb.zarr",
+      "s3://aind-open-data/707349_2024-04-15_10-13-27_processed_2026-09-22_22-59-17/behavior.nwb.zarr",
+      "s3://aind-open-data/707349_2024-04-16_10-38-20_processed_2026-09-11_00-37-02/behavior.nwb.zarr"
+    ]
+  },  
+  "questions": [
+    {
+      "id": "load_trials_table",
+      "text": "How long does it take to load the trials table?",
+      "answer": 0
+    }
+  ]
+}
