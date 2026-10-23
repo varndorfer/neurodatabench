@@ -4,31 +4,33 @@
   "timeout_seconds": 120,
   "data_sources": {
     "zarr": [
-      "s3://aind-open-data/707349_2024-04-09_10-02-40_processed_2026-09-11_00-36-22/behavior.nwb.zarr",
-      "s3://aind-open-data/707349_2024-04-09_10-02-40_processed_2026-09-16_02-55-02/behavior.nwb.zarr",
-      "s3://aind-open-data/707349_2024-04-09_10-02-40_processed_2026-09-22_22-59-16/behavior.nwb.zarr",
-      "s3://aind-open-data/707349_2024-04-10_09-52-51_processed_2026-09-11_00-36-22/behavior.nwb.zarr",
-      "s3://aind-open-data/707349_2024-04-10_09-52-51_processed_2026-09-16_02-54-38/behavior.nwb.zarr",
-      "s3://aind-open-data/707349_2024-04-10_09-52-51_processed_2026-09-22_22-59-17/behavior.nwb.zarr",
-      "s3://aind-open-data/707349_2024-04-11_11-23-32_processed_2026-09-11_00-36-15/behavior.nwb.zarr",
-      "s3://aind-open-data/707349_2024-04-11_11-23-32_processed_2026-09-16_02-54-56/behavior.nwb.zarr",
-      "s3://aind-open-data/707349_2024-04-11_11-23-32_processed_2026-09-22_22-59-12/behavior.nwb.zarr",
-      "s3://aind-open-data/707349_2024-04-12_10-15-55_processed_2026-09-11_00-36-22/behavior.nwb.zarr",
-      "s3://aind-open-data/707349_2024-04-12_10-15-55_processed_2026-09-16_02-54-34/behavior.nwb.zarr",
-      "s3://aind-open-data/707349_2024-04-12_10-15-55_processed_2026-09-22_22-59-14/behavior.nwb.zarr",
-      "s3://aind-open-data/707349_2024-04-13_10-59-09_processed_2026-09-11_00-36-22/behavior.nwb.zarr",
-      "s3://aind-open-data/707349_2024-04-13_10-59-09_processed_2026-09-16_02-54-34/behavior.nwb.zarr",
-      "s3://aind-open-data/707349_2024-04-13_10-59-09_processed_2026-09-22_22-59-13/behavior.nwb.zarr",
-      "s3://aind-open-data/707349_2024-04-15_10-13-27_processed_2026-09-11_00-36-23/behavior.nwb.zarr",
-      "s3://aind-open-data/707349_2024-04-15_10-13-27_processed_2026-09-16_02-54-38/behavior.nwb.zarr",
-      "s3://aind-open-data/707349_2024-04-15_10-13-27_processed_2026-09-22_22-59-17/behavior.nwb.zarr",
-      "s3://aind-open-data/707349_2024-04-16_10-38-20_processed_2026-09-11_00-37-02/behavior.nwb.zarr"
+      "s3://aind-open-data/ecephys_664851_2023-11-15_12-38-21_nwb_2026-05-07_13-58-17/664851_2023-11-15.nwb.zarr",
+      "s3://aind-open-data/multiplane-ophys_853375_2026-08-04_15-17-26_behavior-nwb_2026-08-25_23-22-33/behavior.nwb.zarr",
+      "s3://aind-open-data/multiplane-ophys_790322_2025-07-02_14-00-54_behavior-nwb_2026-08-19_00-21-18/behavior.nwb.zarr",
+      "s3://aind-open-data/multiplane-ophys_782149_2025-04-25_09-14-05_behavior-nwb_2026-08-19_00-21-16/behavior.nwb.zarr",
+      "s3://aind-open-data/multiplane-ophys_790322_2025-08-13_10-27-05_behavior-nwb_2026-08-19_00-21-06/behavior.nwb.zarr",
+      "s3://aind-open-data/multiplane-ophys_782149_2025-03-25_09-46-08_behavior-nwb_2026-08-19_00-21-06/behavior.nwb.zarr",
+      "s3://aind-open-data/multiplane-ophys_849375_2026-07-14_12-24-11_behavior-nwb_2026-08-18_18-55-30/behavior.nwb.zarr",
+      "s3://aind-open-data/multiplane-ophys_849375_2026-07-11_15-08-31_behavior-nwb_2026-08-18_18-55-28/behavior.nwb.zarr",
+      "s3://aind-open-data/multiplane-ophys_849375_2026-05-30_13-29-25_behavior-nwb_2026-08-18_18-55-27/behavior.nwb.zarr",
+      "s3://aind-open-data/multiplane-ophys_849375_2026-07-10_14-02-55_behavior-nwb_2026-08-18_18-55-26/behavior.nwb.zarr",
+      "s3://aind-open-data/multiplane-ophys_849375_2026-07-09_12-13-11_behavior-nwb_2026-08-18_18-55-25/behavior.nwb.zarr"
     ]
   },  
   "questions": [
     {
       "id": "load_trials_table",
       "text": "How long does it take to load the trials table?",
+      "answer": 0
+    },
+    {
+      "id": "load_units_table",
+      "text": "How long does it take to load the units table?",
+      "answer": 0
+    },
+    {
+      "id": "load_multiple_trials_tables",
+      "text": "How long does it take to load multiple trials tables?",
       "answer": 0
     }
   ]

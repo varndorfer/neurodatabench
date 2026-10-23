@@ -14,7 +14,7 @@
 #   "neurodatabench",
 # ]
 # [tool.uv.sources]
-# neurodatabench = { path = "https://github.com/varndorfer/neurodatabench", editable = true }
+# neurodatabench = { path = "../..", editable = true }
 # ///
 
 
@@ -22,10 +22,9 @@
 
 from __future__ import annotations
 
-import os
 import numpy as np
 import pydantic_settings
-import pandas as pd
+import warnings
 from time import perf_counter_ns
 from typing import Any, Literal
 from hdmf_zarr import NWBZarrIO
@@ -72,28 +71,23 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
         logger.debug("Answering benchmark question %s.", question.id)
 
         match question.id:
-            case "small_nwb":
-                answer = _load_nwb(context.benchmark.data_sources[_SOURCE_TYPE][0])
-            case "medium_nwb":
-                answer = _load_nwb(context.benchmark.data_sources[_SOURCE_TYPE][1])
-            case "large_nwb":
-                answer = _load_nwb(context.benchmark.data_sources[_SOURCE_TYPE][2])
             case "load_trials_table":
-                answer = _load_trials_table(context.benchmark.data_sources[_SOURCE_TYPE][0])
+                answer = _load_trials_table(context.benchmark.data_sources[_SOURCE_TYPE][1])
+            case "load_units_table":
+                answer = _load_units_table(context.benchmark.data_sources[_SOURCE_TYPE][0])
+            case "load_multiple_trials_tables":
+                trials_load_times = _load_multiple_trials_tables(context.benchmark.data_sources[_SOURCE_TYPE][1:])
+                trials_metric = neurodatabench.RunMetric(
+                    x_data=trials_load_times["x"],
+                    x_label="tables loaded",
+                    y_data=trials_load_times["y"],
+                    y_label="load time (s)",
+                )
+                context.run_metrics["Load Trials Tables"] = trials_metric
             case _:
                 raise ValueError(f"Unsupported benchmark question: {question.id}")
 
         context.submit_answer(question.id, 0)
-
-    """Submit metrics"""
-    trials_load_times = _load_multiple_trials_tables(context.benchmark.data_sources[_SOURCE_TYPE])
-    trials_metric = neurodatabench.RunMetric(
-        x_data=trials_load_times["x"],
-        x_label="tables loaded",
-        y_data=trials_load_times["y"],
-        y_label="load time (s)",
-    )
-    context.run_metrics["Load Trials Tables"] = trials_metric
 
 
 def _object_path(obj) -> str:
@@ -105,26 +99,20 @@ def _object_path(obj) -> str:
     return "/".join(reversed(parts))
 
 
-def _load_nwb(file: Any) -> Any:
-    tables = {}
-    timeseries = {}
-    for obj in file.objects.values():
-        if isinstance(obj, DynamicTable):
-            tables[_object_path(obj)] = obj.to_dataframe(index=True)
-        elif isinstance(obj, TimeSeries):
-            timeseries[_object_path(obj)] = {
-                "data": np.asarray(obj.data[:]),
-                "timestamps": np.asarray(obj.get_timestamps()),
-            }
-    return {"tables": tables, "timeseries": timeseries}
-
-
 def _load_trials_table(nwb_path: str) -> Any:
     file = _open_file(nwb_path)
     nwb_file = file["nwb_file"]
     trials_df = nwb_file.trials.to_dataframe()
     assert not trials_df.empty
     return trials_df
+
+
+def _load_units_table(nwb_path: str) -> Any:
+    file = _open_file(nwb_path)
+    nwb_file = file["nwb_file"]
+    units_df = nwb_file.units.to_dataframe()
+    assert not units_df.empty
+    return units_df
 
 
 def _load_multiple_trials_tables(nwb_paths: list[str]) -> dict[str, Any]:
@@ -155,13 +143,16 @@ def _open_file(nwb_path: str) -> dict[str, Any]:
     """Return the file record for the given NWB path."""
     try:
         logger.debug("Opening %s through NWBZarrIO.", nwb_path)
-        nwb_io = NWBZarrIO(
-            path=nwb_path,
-            mode="r",
-            load_namespaces=True,
-            storage_options={"anon": True},
-        )
-        nwb_file = nwb_io.read()
+        with warnings.catch_warnings():
+            """Suppress column name conflict warnings from the hdmf library"""
+            warnings.simplefilter("ignore")
+            nwb_io = NWBZarrIO(
+                path=nwb_path,
+                mode="r",
+                load_namespaces=True,
+                storage_options={"anon": True},
+            )
+            nwb_file = nwb_io.read()
     except Exception as e:
         logger.error("Failed to open %s: %s", nwb_path, e)
         raise

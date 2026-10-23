@@ -2,8 +2,11 @@
 # requires-python = ">=3.10"
 # dependencies = [
 #   "altair",
+#   "hdmf-zarr",
+#   "numcodecs",
 #   "numpy",
 #   "obstore",
+#   "pandas",
 #   "psutil",
 #   "pydantic>=2.13.4",
 #   "pydantic-settings>=2.14.1",
@@ -13,7 +16,7 @@
 #   "neurodatabench",
 # ]
 # [tool.uv.sources]
-# neurodatabench = { path = "https://github.com/varndorfer/neurodatabench" }
+# neurodatabench = { path = "../..", editable = true }
 # ///
 
 
@@ -21,9 +24,15 @@
 
 from __future__ import annotations
 
+import io
+import itertools
+import json
 import logging
+import numcodecs
 import numpy as np
 import pydantic_settings
+import numcodecs.pickles
+import pickle
 import pandas as pd
 import os
 import zarr
@@ -33,6 +42,8 @@ from typing import Any, Iterator, MutableMapping, Literal
 import neurodatabench
 
 logger = neurodatabench.get_logger(__name__)
+# Zarr 2 settting for decoding arrays with object-dtype stored with a pickle codec
+numcodecs.pickles.ALLOW_UNSAFE_PICKLE_DECODE = True 
 
 _SOURCE_TYPE = "zarr"
 
@@ -56,7 +67,6 @@ class Settings(pydantic_settings.BaseSettings):
 
 settings: Settings | None = None
 
-
 def _settings() -> Settings:
     """Return the resolved implementation settings."""
     if settings is None:
@@ -70,58 +80,124 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
         logger.debug("Answering benchmark question %s.", question.id)
 
         match question.id:
-            case "small_nwb":
-                _load_nwb(context.benchmark.data_sources[_SOURCE_TYPE][0])
-            case "medium_nwb":
-                _load_nwb(context.benchmark.data_sources[_SOURCE_TYPE][1])
-            case "large_nwb":
-                _load_nwb(context.benchmark.data_sources[_SOURCE_TYPE][2])
             case "load_trials_table":
-                _load_trials_table(context.benchmark.data_sources[_SOURCE_TYPE][0])
+                _load_table(context.benchmark.data_sources[_SOURCE_TYPE][1], "intervals/trials")
+            case "load_units_table":
+                _load_table(context.benchmark.data_sources[_SOURCE_TYPE][0], "units")
+            case "load_multiple_trials_tables":
+                trials_load_times = _load_multiple_trials_tables(context.benchmark.data_sources[_SOURCE_TYPE][1:])
+                trials_metric = neurodatabench.RunMetric(
+                        x_data=trials_load_times["x"],
+                        x_label="tables loaded",
+                        y_data=trials_load_times["y"],
+                        y_label="load time (s)",
+                    )
+                context.run_metrics["Load Trials Tables"] = trials_metric
             case _:
                 raise ValueError(f"Unsupported benchmark question: {question.id}")
 
-        context.submit_answer(question.id, 0)
-
-    """Submit metrics"""
-    trials_load_times = _load_multiple_trials_tables(context.benchmark.data_sources[_SOURCE_TYPE])
-    trials_metric = neurodatabench.RunMetric(
-        x_data=trials_load_times["x"],
-        x_label="tables loaded",
-        y_data=trials_load_times["y"],
-        y_label="load time (s)",
-    )
-    context.run_metrics["Load Trials Tables"] = trials_metric
+        context.submit_answer(question.id, 0)    
 
 
-def _load_nwb(nwb_path: str) -> dict[str, np.ndarray]:
-    """Read every array in one NWB Zarr store into NumPy arrays, keyed by internal path."""
-    root = _open_store(nwb_path)
-    arrays: dict[str, np.ndarray] = {}
+def _load_table(nwb_path: str, table_name: str) -> None:
+    """Load one NWB table group fully into a pandas DataFrame."""
+    file = _open_store(nwb_path)
+    table = file[table_name]
+
     if _is_zarr_v3():
-        for path, member in root.members(max_depth=None):
-            if isinstance(member, zarr.Array):
-                arrays[path] = np.asarray(member[...])
+        # zarr 3 cannot parse v2 object/pickle arrays, so read the raw v2 layout directly.
+        arrays = _read_table_arrays_raw(table)
     else:
+        arrays = {k: np.asarray(v[...]) for k, v in table.arrays()}
 
-        def _read_array(path: str, member: Any) -> None:
-            """Read one zarr v2 array found while visiting the hierarchy."""
-            if isinstance(member, zarr.Array):
-                arrays[path] = np.asarray(member[...])
+    index_names = {k for k in arrays if k.endswith("_index")}
+    columns: dict[str, Any] = {}
+    for name, data in arrays.items():
+        if name in index_names:
+            continue  # consumed by its target column below
+        if f"{name}_index" in index_names:
+            ends = arrays[f"{name}_index"]
+            columns[name] = np.split(data, ends[:-1])  # one array per row
+        else:
+            columns[name] = data.tolist()
 
-        root.visititems(_read_array)
-    logger.debug("Loaded %d arrays from %s.", len(arrays), nwb_path)
+    table_df = pd.DataFrame(columns)
+    assert not table_df.empty
+
+
+def _store_get(store: Any, key: str) -> bytes | None:
+    """Fetch one raw object from a zarr v3 store, returning None when it is missing."""
+    from zarr.core.buffer import default_buffer_prototype
+    from zarr.core.sync import sync
+
+    buf = sync(store.get(key, prototype=default_buffer_prototype()))
+    return None if buf is None else buf.to_bytes()
+
+
+def _store_list_dir(store: Any, prefix: str) -> list[str]:
+    """List the child names directly under a prefix of a zarr v3 store."""
+    from zarr.core.sync import sync
+
+    async def _collect() -> list[str]:
+        """Drain the async listing."""
+        return [name async for name in store.list_dir(prefix)]
+
+    return sync(_collect())
+
+
+def _read_table_arrays_raw(table: Any) -> dict[str, np.ndarray]:
+    """Read every array of a zarr v2 group through its store, bypassing zarr-python's dtype parsing."""
+    store, root = table.store, table.path.strip("/")
+    arrays: dict[str, np.ndarray] = {}
+    for name in _store_list_dir(store, root):
+        raw = _store_get(store, f"{root}/{name}/.zarray")
+        if raw is None:
+            continue  # subgroup or attribute file, not an array
+        arrays[name] = _read_array_raw(store, f"{root}/{name}", json.loads(raw))
+    logger.debug("Read %d arrays from %s without zarr dtype parsing.", len(arrays), root)
     return arrays
 
 
-def _load_trials_table(nwb_path: str) -> None:
-    file = _open_store(nwb_path)
-    trials = file['intervals']['trials']
-    trials_df = pd.DataFrame()
-    for k, v in trials.arrays():
-        data = np.asarray(v)
-        trials_df[k] = data.tolist()
-    assert not trials_df.empty
+class _StubUnpickler(pickle.Unpickler):
+    """Unpickler that replaces hdmf_zarr classes with inert stubs so zarr 2-only imports are skipped."""
+
+    def find_class(self, module: str, name: str) -> Any:
+        """Return a stub for hdmf_zarr classes, otherwise resolve normally."""
+        if module.split(".", maxsplit=1)[0] == "hdmf_zarr":
+            return type(name, (dict,), {})
+        return super().find_class(module, name)
+
+
+def _unpickle_stubbed(buf: bytes) -> np.ndarray:
+    """Decode a numcodecs pickle chunk without importing hdmf_zarr (incompatible with zarr 3)."""
+    return _StubUnpickler(io.BytesIO(buf)).load()
+
+
+def _read_array_raw(store: Any, path: str, zarray: dict[str, Any]) -> np.ndarray:
+    """Assemble one zarr v2 array from its chunk objects, decoding with numcodecs."""
+    shape, chunks = tuple(zarray["shape"]), tuple(zarray["chunks"])
+    dtype = np.dtype(zarray["dtype"])
+    sep = zarray.get("dimension_separator", ".")
+    compressor = numcodecs.get_codec(zarray["compressor"]) if zarray.get("compressor") else None
+    filters = [numcodecs.get_codec(f) for f in zarray.get("filters") or []]
+    fill = zarray.get("fill_value")
+    out = np.empty(shape, dtype=dtype)
+    if fill is not None and dtype != object:
+        out.fill(fill)
+    grid = [range(-(-s // c)) for s, c in zip(shape, chunks)]
+    for idx in itertools.product(*grid):
+        buf = _store_get(store, f"{path}/{sep.join(map(str, idx))}")
+        if buf is None:
+            continue  # missing chunk means fill value
+        if compressor is not None:
+            buf = compressor.decode(buf)
+        for codec in reversed(filters):
+            buf = _unpickle_stubbed(buf) if codec.codec_id == "pickle" else codec.decode(buf)
+        chunk = buf if isinstance(buf, np.ndarray) else np.frombuffer(buf, dtype=dtype)
+        chunk = chunk.reshape(chunks)
+        region = tuple(slice(i * c, min((i + 1) * c, s)) for i, c, s in zip(idx, chunks, shape))
+        out[region] = chunk[tuple(slice(0, r.stop - r.start) for r in region)]
+    return out
 
 
 def _load_multiple_trials_tables(nwb_paths: list[str]) -> dict[str, Any]:
@@ -184,7 +260,6 @@ def _quiet_storage_debug_loggers() -> None:
     """Keep benchmark debug logs focused on implementation-level events."""
     for logger_name in ("aiobotocore", "botocore", "fsspec", "s3fs", "urllib3"):
         logging.getLogger(logger_name).setLevel(logging.WARNING)
-#endregion
 
 
 # Zarr store access

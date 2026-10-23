@@ -2,14 +2,15 @@
 # requires-python = ">=3.10"
 # dependencies = [
 #   "altair",
-#   "lazynwb",
+#   "lazynwb>=1.0.0",
+#   "hdmf-zarr<0.12",
 #   "numpy",
 #   "polars",
 #   "psutil",
 #   "neurodatabench",
 # ]
 # [tool.uv.sources]
-# neurodatabench = { path = "https://github.com/varndorfer/neurodatabench" }
+# neurodatabench = { path = "../..", editable = true }
 # ///
 
 
@@ -25,11 +26,8 @@ from time import perf_counter_ns
 from typing import Any, Literal
 
 import lazynwb
-import numpy as np
 import pydantic_settings
 import pandas as pd
-import polars as pl
-import zarr
 
 import neurodatabench
 
@@ -74,43 +72,30 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
         logger.debug("Answering benchmark question %s.", question.id)
 
         match question.id:
-            case "small_nwb":
-                answer = _load_nwb(context.benchmark.data_sources[_SOURCE_TYPE][0])
-            case "medium_nwb":
-                answer = _load_nwb(context.benchmark.data_sources[_SOURCE_TYPE][1])
-            case "large_nwb":
-                answer = _load_nwb(context.benchmark.data_sources[_SOURCE_TYPE][2])
             case "load_trials_table":
-                answer = _load_trials_table(context.benchmark.data_sources[_SOURCE_TYPE][0])
+                answer = _load_table(context.benchmark.data_sources[_SOURCE_TYPE][1], '/intervals/trials')
+            case "load_units_table":
+                answer = _load_table(context.benchmark.data_sources[_SOURCE_TYPE][0], '/units')
+            case "load_multiple_trials_tables":
+                trials_load_times = _load_multiple_trials_tables(context.benchmark.data_sources[_SOURCE_TYPE][1:])
+                trials_metric = neurodatabench.RunMetric(
+                        x_data=trials_load_times["x"],
+                        x_label="tables loaded",
+                        y_data=trials_load_times["y"],
+                        y_label="load time (s)",
+                    )
+                context.run_metrics["Load Trials Tables"] = trials_metric
             case _:
                 raise ValueError(f"Unsupported benchmark question: {question.id}")
 
         context.submit_answer(question.id, 0)
 
-    """Submit metrics"""
-    trials_load_times = _load_multiple_trials_tables(context.benchmark.data_sources[_SOURCE_TYPE])
-    trials_metric = neurodatabench.RunMetric(
-        x_data=trials_load_times["x"],
-        x_label="tables loaded",
-        y_data=trials_load_times["y"],
-        y_label="load time (s)",
-    )
-    context.run_metrics["Load Trials Tables"] = trials_metric
 
-
-def _load_nwb(file: Any) -> Any:
-    paths = lazynwb.get_internal_paths(file)
-    dfs = {}
-    for k in paths.keys():
-        if type(paths[k]) is zarr.hierarchy.Group: # only gets DynamicTables, not TimeSeries
-            dfs[k] = lazynwb.get_df(file, k)
-    return len(dfs.values())
-
-
-def _load_trials_table(file: Any) -> None:
+def _load_table(file: Any, table_name: str) -> None:
     df = lazynwb.get_df(
         file,
-        'intervals/trials'
+        table_name,
+        exclude_array_columns=False
     )
     assert type(df) is pd.DataFrame
 

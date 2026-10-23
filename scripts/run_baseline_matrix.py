@@ -7,7 +7,7 @@
 #   "neurodatabench",
 # ]
 # [tool.uv.sources]
-# neurodatabench = { path = "https://github.com/varndorfer/neurodatabench" }
+# neurodatabench = { path = ".." }
 # ///
 
 """Run the default NeuroDataBench implementation matrix."""
@@ -119,37 +119,15 @@ def configure_logging(log_level: str) -> None:
 def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
     """Build the repository's default benchmark matrix."""
     runs: list[neurodatabench.matrix.MatrixRun] = []
-    benchmark = BENCHMARK
-    for backend in ("obstore", "remfile", "s3fs"):
-        runs.append(
-            neurodatabench.matrix.MatrixRun(
-                implementation=f"implementations/lazynwb/baseline.py",
-                benchmark=benchmark,
-                implementation_id=f"lazynwb-v0.2.91-{backend}",
-                object_store_backend=backend,
-                local_cache="cold",
-                dependencies=("lazynwb==0.2.91",),
-            )
-        )
     for local_cache in CACHE_STATUSES:
         runs.append(
             neurodatabench.matrix.MatrixRun(
                 implementation="implementations/lazynwb/baseline.py",
-                benchmark=benchmark,
-                implementation_id=f"lazynwb-1.0.0dev3-obstore-{local_cache}",
+                benchmark=BENCHMARK,
+                implementation_id=f"lazynwb-1.0.0-obstore-{local_cache}",
                 object_store_backend="obstore",
                 local_cache=local_cache,
-                dependencies=("lazynwb==1.0.0dev3",),
-            )
-        )
-        runs.append(
-            neurodatabench.matrix.MatrixRun(
-                implementation="implementations/lazynwb/baseline.py",
-                benchmark=benchmark,
-                implementation_id=f"lazynwb-dev-obstore-{local_cache}",
-                object_store_backend="obstore",
-                local_cache=local_cache,
-                dependencies=("git+https://github.com/bjhardcastle/lazynwb@dev6",),
+                dependencies=("lazynwb==1.0.0",),
             )
         )
 
