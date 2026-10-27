@@ -21,8 +21,8 @@ _LEADERBOARD_SERIES_COLORS = [
     "#d97706",
     "#e11d48",
     "#7c3aed",
-    "#0f766e",
     "#2563eb",
+    "#0f766e",
 ]
 _DASHBOARD_COLORS: dict[str, str] = {
     "timing": "#d97706",
@@ -343,21 +343,32 @@ def _leaderboard_metrics_rows(
             if not isinstance(x_data, list) or not isinstance(y_data, list):
                 continue
             previous_stop_seconds = 0.0
-            for x_value, y_value in zip(x_data, y_data):
+            n_points = min(len(x_data), len(y_data))
+            # Thin dense series for plotting; cumulative time still sums every point.
+            step = 100 if n_points >= 200 else 10 if n_points >= 20 else 1
+            logger.debug(
+                "Plotting every %d of %d points for %s / %s.",
+                step,
+                n_points,
+                profile_series,
+                metric_name,
+            )
+            for m, (x_value, y_value) in enumerate(zip(x_data, y_data)):
                 load_elapsed_seconds = float(y_value or 0.0)
                 stop_seconds = previous_stop_seconds + load_elapsed_seconds
-                metric_rows.append(
-                    {
-                        "profile_series": profile_series,
-                        "metric": str(metric_name),
-                        "x_label": str(metric.get("x_label", "")),
-                        "y_label": str(metric.get("y_label", "")),
-                        "x": x_value,
-                        "start_seconds": previous_stop_seconds,
-                        "stop_seconds": stop_seconds,
-                        "elapsed_seconds": load_elapsed_seconds,
-                    }
-                )
+                if m % step == 0 or m == n_points - 1:
+                    metric_rows.append(
+                        {
+                            "profile_series": profile_series,
+                            "metric": str(metric_name),
+                            "x_label": str(metric.get("x_label", "")),
+                            "y_label": str(metric.get("y_label", "")),
+                            "x": x_value,
+                            "start_seconds": previous_stop_seconds,
+                            "stop_seconds": stop_seconds,
+                            "elapsed_seconds": load_elapsed_seconds,
+                        }
+                    )
                 previous_stop_seconds = stop_seconds
     return metric_rows
 
@@ -798,15 +809,16 @@ def _metrics_summary_chart(
     """Return an Altair chart summarizing a single metric."""
     rows: list[dict[str, object]] = []
     previous_stop_seconds = 0
-    for m in range(len(metric.y_data)):
-        load_elapsed_seconds = float(metric.y_data[m] or 0.0)
-        stop_seconds = previous_stop_seconds + load_elapsed_seconds
+    n_points = len(metric.y_data)
+    for m in range(n_points):
+        stop_seconds = float(metric.y_data[m])
+        elapsed_seconds = stop_seconds - previous_stop_seconds
         rows.append(
             {
                 "x": metric.x_data[m],
                 "start_seconds": previous_stop_seconds,
                 "stop_seconds": stop_seconds,
-                "elapsed_seconds": load_elapsed_seconds,
+                "elapsed_seconds": elapsed_seconds,
                 "metric": f"{metric_name}",
             }
         )
@@ -923,6 +935,7 @@ def _submit_answer_timing_rows(
                 "duration_seconds": phase_timing.stop_seconds - previous_stop_seconds,
             }
         )
+
     return rows
 
 

@@ -123,39 +123,38 @@ def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
     """Build the repository's default benchmark matrix."""
     runs: list[neurodatabench.matrix.MatrixRun] = []
     benchmark = BENCHMARK
-    for _source_type in ("hdf5", "zarr"):
-        for backend in ("obstore", "remfile", "s3fs"):
-            runs.append(
-                neurodatabench.matrix.MatrixRun(
-                    implementation=f"implementations/lazynwb/{BENCHMARK}.py",
-                    benchmark=benchmark,
-                    implementation_id=f"lazynwb-v0.2.91-{backend}",
-                    object_store_backend=backend,
-                    local_cache="cold",
-                    dependencies=("lazynwb==0.2.91",),
-                )
+    for backend in ("obstore", "remfile", "s3fs"):
+        runs.append(
+            neurodatabench.matrix.MatrixRun(
+                implementation=f"implementations/lazynwb/{BENCHMARK}.py",
+                benchmark=benchmark,
+                implementation_id=f"lazynwb-v0.2.91-{backend}",
+                object_store_backend=backend,
+                local_cache="cold",
+                dependencies=("lazynwb==0.2.91",),
             )
-        for local_cache in CACHE_STATUSES:
-            runs.append(
-                neurodatabench.matrix.MatrixRun(
-                    implementation=f"implementations/lazynwb/{BENCHMARK}.py",
-                    benchmark=benchmark,
-                    implementation_id=f"lazynwb-1.0.0dev3-obstore-{local_cache}",
-                    object_store_backend="obstore",
-                    local_cache=local_cache,
-                    dependencies=("lazynwb==1.0.0dev3",),
-                )
+        )
+    for local_cache in CACHE_STATUSES:
+        runs.append(
+            neurodatabench.matrix.MatrixRun(
+                implementation=f"implementations/lazynwb/{BENCHMARK}.py",
+                benchmark=benchmark,
+                implementation_id=f"lazynwb-1.0.0dev3-obstore-{local_cache}",
+                object_store_backend="obstore",
+                local_cache=local_cache,
+                dependencies=("lazynwb==1.0.0dev3",),
             )
-            runs.append(
-                neurodatabench.matrix.MatrixRun(
-                    implementation=f"implementations/lazynwb/{BENCHMARK}.py",
-                    benchmark=benchmark,
-                    implementation_id=f"lazynwb-dev-obstore-{local_cache}",
-                    object_store_backend="obstore",
-                    local_cache=local_cache,
-                    dependencies=("git+https://github.com/bjhardcastle/lazynwb@dev6",),
-                )
+        )
+        runs.append(
+            neurodatabench.matrix.MatrixRun(
+                implementation=f"implementations/lazynwb/{BENCHMARK}.py",
+                benchmark=benchmark,
+                implementation_id=f"lazynwb-dev-obstore-{local_cache}",
+                object_store_backend="obstore",
+                local_cache=local_cache,
+                dependencies=("git+https://github.com/bjhardcastle/lazynwb@dev6",),
             )
+        )
 
     for backend in H5PY_REMOTE_FILE_BACKENDS:
         runs.append(
@@ -195,7 +194,7 @@ def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
             neurodatabench.matrix.MatrixRun(
                 implementation="implementations/pynwb_template.py",
                 benchmark=BENCHMARK,
-                implementation_id=f"pynwb-{backend}",
+                implementation_id=f"pynwb-h5py-{backend}",
                 object_store_backend=backend,
             )
         )

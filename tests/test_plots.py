@@ -218,6 +218,73 @@ class PlotTests(unittest.TestCase):
             self.assertEqual(network_rows[-1]["elapsed_seconds"], 1.0)
             self.assertGreater(network_rows[-1]["network_received_mib"], 1.0)
 
+    def _metric_rows_for(self, runs: dict[str, str | None]) -> list[dict[str, object]]:
+        """Build metric rows for runs whose metrics.json text is given (None writes no file)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            results_dir = Path(tmpdir)
+            leaderboard_rows = []
+            for name, metrics_text in runs.items():
+                run_dir = results_dir / name
+                run_dir.mkdir()
+                if metrics_text is not None:
+                    (run_dir / "metrics.json").write_text(metrics_text, encoding="utf-8")
+                leaderboard_rows.append(
+                    {
+                        "result_dir": name,
+                        "implementation_id": name,
+                        "source_types": "zarr",
+                    }
+                )
+            return neurodatabench.plots._leaderboard_metrics_rows(
+                results_dir=results_dir,
+                leaderboard_rows=leaderboard_rows,
+            )
+
+    def test_leaderboard_metrics_rows_accumulate_and_label_series(self) -> None:
+        """Short series keep every point with cumulative stop times and series labels."""
+        metrics = {
+            "Load": {
+                "x_data": [0, 1, 2],
+                "y_data": [0, 1.5, 2.5],
+                "x_label": "tables loaded",
+                "y_label": "load time (s)",
+            }
+        }
+
+        rows = self._metric_rows_for({"impl": json.dumps(metrics)})
+
+        self.assertEqual([row["x"] for row in rows], [0, 1, 2])
+        self.assertEqual([row["stop_seconds"] for row in rows], [0.0, 1.5, 4.0])
+        self.assertEqual(rows[1]["start_seconds"], 0.0)
+        self.assertEqual(rows[1]["elapsed_seconds"], 1.5)
+        self.assertEqual(rows[0]["profile_series"], "impl [zarr]")
+        self.assertEqual(rows[0]["metric"], "Load")
+        self.assertEqual(rows[0]["x_label"], "tables loaded")
+        self.assertEqual(rows[0]["y_label"], "load time (s)")
+
+    def test_leaderboard_metrics_rows_thin_dense_series_and_keep_last_point(self) -> None:
+        """Series are thinned per run, keep the final point, and still sum every value."""
+        cases = {19: 19, 25: 4, 200: 3}
+        for n_points, expected_rows in cases.items():
+            with self.subTest(n_points=n_points):
+                metrics = {"Load": {"x_data": list(range(n_points)), "y_data": [1.0] * n_points}}
+
+                rows = self._metric_rows_for({"impl": json.dumps(metrics)})
+
+                self.assertEqual(len(rows), expected_rows)
+                self.assertEqual(rows[-1]["x"], n_points - 1)
+                self.assertEqual(rows[-1]["stop_seconds"], float(n_points))
+
+        thinned = self._metric_rows_for(
+            {"impl": json.dumps({"Load": {"x_data": list(range(25)), "y_data": [1.0] * 25}})}
+        )
+        self.assertEqual([row["x"] for row in thinned], [0, 10, 20, 24])
+
+        dense = self._metric_rows_for(
+            {"impl": json.dumps({"Load": {"x_data": list(range(200)), "y_data": [1.0] * 200}})}
+        )
+        self.assertEqual([row["x"] for row in dense], [0, 100, 199])
+
     def test_dashboard_title_includes_stack_metadata_when_present(self) -> None:
         """Run dashboard subtitles should include implementation stack metadata."""
         title = neurodatabench.plots._dashboard_title(

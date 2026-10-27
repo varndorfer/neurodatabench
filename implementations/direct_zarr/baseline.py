@@ -16,7 +16,7 @@
 #   "neurodatabench",
 # ]
 # [tool.uv.sources]
-# neurodatabench = { path = "../..", editable = true }
+# neurodatabench = { git = "https://github.com/bjhardcastle/neurodatabench" }
 # ///
 
 
@@ -35,6 +35,7 @@ import numcodecs.pickles
 import pickle
 import pandas as pd
 import os
+import s3fs
 import zarr
 from time import perf_counter_ns
 from typing import Any, Iterator, MutableMapping, Literal
@@ -85,18 +86,19 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
             case "load_units_table":
                 _load_table(context.benchmark.data_sources[_SOURCE_TYPE][0], "units")
             case "load_multiple_trials_tables":
-                trials_load_times = _load_multiple_trials_tables(context.benchmark.data_sources[_SOURCE_TYPE][1:])
-                trials_metric = neurodatabench.RunMetric(
-                        x_data=trials_load_times["x"],
-                        x_label="tables loaded",
-                        y_data=trials_load_times["y"],
-                        y_label="load time (s)",
+                tables_result = _load_multiple_trials_tables(context.benchmark.data_sources[_SOURCE_TYPE][1:])
+                for metric in tables_result:
+                    sliced_data = _prepare_time_metric_data(metric["x"], metric["y"])
+                    context.run_metrics[metric["name"]] = neurodatabench.RunMetric(
+                        x_data=sliced_data["x"],
+                        x_label=metric["x_label"],
+                        y_data=sliced_data["y"],
+                        y_label=metric["y_label"],
                     )
-                context.run_metrics["Load Trials Tables"] = trials_metric
             case _:
                 raise ValueError(f"Unsupported benchmark question: {question.id}")
 
-        context.submit_answer(question.id, 0)    
+        context.submit_answer(question.id, 0)
 
 
 def _load_table(nwb_path: str, table_name: str) -> None:
@@ -200,25 +202,62 @@ def _read_array_raw(store: Any, path: str, zarray: dict[str, Any]) -> np.ndarray
     return out
 
 
-def _load_multiple_trials_tables(nwb_paths: list[str]) -> dict[str, Any]:
-    all_trials = []
-    x_data = [0]
+def _load_multiple_trials_tables(nwb_paths: list[str]) -> list[dict[str, Any]]:
+    """Load trials tables in sequence and return metric series sharing one load-time (s) y axis.
+
+    The first series is keyed by tables loaded, the second by cumulative stored MB loaded.
+    """
+    n = len(nwb_paths)
+    if n <= 1:
+        raise ValueError(f"At least two NWB paths are required to load multiple trials tables. Paths provided: {n}.")
+
+    x_tables = [0]
+    x_mb = [0.0]
     y_data = [0]
-    for i in range(len(nwb_paths)):
+    fs = s3fs.S3FileSystem(anon=True)
+    for i in range(n):
+        # Sized outside the timed section so the S3 listing is not counted as load time.
+        prefix = f"{nwb_paths[i].rstrip('/')}/intervals/trials".removeprefix("s3://")
+        table_mb = fs.du(prefix) / 1e6
+
         start_ns = perf_counter_ns()
         file = _open_store(nwb_paths[i])
         trials = file['intervals']['trials']
         trials_df = pd.DataFrame()
         for k, v in trials.arrays():
-            data = np.asarray(v)
-            trials_df[k] = data.tolist()
+            trials_df[k] = np.asarray(v).tolist()
         stop_ns = perf_counter_ns()
 
-        all_trials.append(trials_df)
-        x_data.append(i + 1)
-        load_time_ns = stop_ns - start_ns
-        y_data.append(load_time_ns / 1_000_000_000)
-        
+        x_tables.append(i + 1)
+        x_mb.append(x_mb[-1] + table_mb)
+        y_data.append((stop_ns - start_ns) / 1_000_000_000)
+        logger.debug("Loaded %.2f MB trials table from %s.", table_mb, nwb_paths[i])
+
+    return [
+        {
+            "name": f"Load {n} Trials Tables",
+            "x": x_tables,
+            "x_label": "tables loaded",
+            "y": y_data,
+            "y_label": "load time (s)",
+        },
+        {
+            "name": f"Load {n} Trials Tables (MB)",
+            "x": x_mb,
+            "x_label": "MB loaded",
+            "y": y_data,
+            "y_label": "load time (s)",
+        },
+    ]
+
+def _prepare_time_metric_data(x: list, y:list) -> dict[str, Any]:
+    x_data = [0]
+    y_data = [0]
+
+    n_points = len(x)
+    step = 100 if n_points >= 200 else 10 if n_points >= 20 else 1
+    x_data = [sum(x[:k]) for k in range(step, n_points + 1, step)]
+    y_data = y[step - 1::step]
     return {"x": x_data, "y": y_data}
 #endregion
 

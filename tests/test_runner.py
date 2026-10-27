@@ -80,6 +80,7 @@ class RunnerTests(unittest.TestCase):
             self.assertTrue((out_dir / "run_metadata.json").exists())
             self.assertTrue((out_dir / "timings.json").exists())
             self.assertTrue((out_dir / "validation.json").exists())
+            self.assertTrue((out_dir / "metrics.json").exists())
             self.assertTrue((out_dir / "profile_samples.jsonl").exists())
             self.assertTrue((out_dir / "profile_summary.json").exists())
             self.assertTrue((out_dir / "dashboard.html").exists())

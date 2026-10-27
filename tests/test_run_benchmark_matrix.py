@@ -86,7 +86,7 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
             output,
         )
         self.assertNotIn("neurodatabench.runner supervise", output)
-        self.assertIn("implementations/lazynwb_template.py", output)
+        self.assertIn("implementations/lazynwb/dynamic_routing_nwb_v0.py", output)
 
     def test_timeout_enabled_by_default(self) -> None:
         """Omitting timeout-disabled should keep the supervisor enabled."""
@@ -178,7 +178,7 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
             self.assertIn(
                 str(
                     Path("dynamic_routing_nwb_v0")
-                    / "lazynwb_0_2_91_obstore_hdf5"
+                    / "lazynwb-v0_2_91-obstore"
                 ),
                 output,
             )

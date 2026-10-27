@@ -7,7 +7,7 @@
 #   "neurodatabench",
 # ]
 # [tool.uv.sources]
-# neurodatabench = { path = ".." }
+# neurodatabench = { git = "https://github.com/bjhardcastle/neurodatabench" }
 # ///
 
 """Run the default NeuroDataBench implementation matrix."""

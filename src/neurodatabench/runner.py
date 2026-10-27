@@ -1048,14 +1048,12 @@ def _leaderboard_row(run_dir: Path) -> neurodatabench.models.JsonObject | None:
     """Return one leaderboard row for a complete successful or timed-out run."""
     metadata = _read_json_object(run_dir / "run_metadata.json")
     timings = _read_json_object(run_dir / "timings.json")
-    metrics = _read_json_object(run_dir / "metrics.json")
     validation = _read_json_object(run_dir / "validation.json")
     profile_summary = _read_json_object(run_dir / "profile_summary.json")
     if (
         metadata is None
         or timings is None
         or validation is None
-        or metrics is None
         or profile_summary is None
     ):
         return None

@@ -7,10 +7,11 @@
 #   "numpy",
 #   "polars",
 #   "psutil",
+#   "s3fs",
 #   "neurodatabench",
 # ]
 # [tool.uv.sources]
-# neurodatabench = { path = "../..", editable = true }
+# neurodatabench = { git = "https://github.com/bjhardcastle/neurodatabench" }
 # ///
 
 
@@ -20,6 +21,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import os
+import numcodecs.pickles
 import tempfile
 from pathlib import Path
 from time import perf_counter_ns
@@ -28,10 +30,13 @@ from typing import Any, Literal
 import lazynwb
 import pydantic_settings
 import pandas as pd
+import s3fs
 
 import neurodatabench
 
 logger = neurodatabench.get_logger(__name__)
+# Zarr 2 settting for decoding arrays with object-dtype stored with a pickle codec
+numcodecs.pickles.ALLOW_UNSAFE_PICKLE_DECODE = True 
 
 _SOURCE_TYPE = "zarr"
 
@@ -77,14 +82,14 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
             case "load_units_table":
                 answer = _load_table(context.benchmark.data_sources[_SOURCE_TYPE][0], '/units')
             case "load_multiple_trials_tables":
-                trials_load_times = _load_multiple_trials_tables(context.benchmark.data_sources[_SOURCE_TYPE][1:])
-                trials_metric = neurodatabench.RunMetric(
-                        x_data=trials_load_times["x"],
-                        x_label="tables loaded",
-                        y_data=trials_load_times["y"],
-                        y_label="load time (s)",
+                tables_result = _load_multiple_trials_tables(context.benchmark.data_sources[_SOURCE_TYPE][1:])
+                for metric in tables_result:
+                    context.run_metrics[metric["name"]] = neurodatabench.RunMetric(
+                        x_data=metric["x"],
+                        x_label=metric["x_label"],
+                        y_data=metric["y"],
+                        y_label=metric["y_label"],
                     )
-                context.run_metrics["Load Trials Tables"] = trials_metric
             case _:
                 raise ValueError(f"Unsupported benchmark question: {question.id}")
 
@@ -100,20 +105,53 @@ def _load_table(file: Any, table_name: str) -> None:
     assert type(df) is pd.DataFrame
 
 
-def _load_multiple_trials_tables(nwb_paths: list[str]) -> dict[str, Any]:
-    start_ns = perf_counter_ns()
-    all_trials = lazynwb.get_df(
-        nwb_paths,
-        'intervals/trials'
-    )
-    stop_ns = perf_counter_ns()
-    x_data = [0]
+def _load_multiple_trials_tables(nwb_paths: list[str]) -> list[dict[str, Any]]:
+    """Load trials tables in sequence and return metric series sharing one load-time (s) y axis.
+
+    The first series is keyed by tables loaded, the second by cumulative stored MB loaded.
+    """
+    n = len(nwb_paths)
+    if n <= 1:
+        raise ValueError(f"At least two NWB paths are required to load multiple trials tables. Paths provided: {n}.")
+
+    x_tables = [0]
+    x_mb = [0.0]
     y_data = [0]
-    x_data.append(len(nwb_paths))
-    load_time_ns = stop_ns - start_ns
-    y_data.append(load_time_ns / 1_000_000_000)
-        
-    return {"x": x_data, "y": y_data}
+    step = 100 if n >= 200 else 10 if n >= 20 else 1
+    fs = s3fs.S3FileSystem(anon=True)
+    prev = 0
+    for i in range(step, n + 1, step):
+        batch_mb = sum(
+            fs.du(f"{path.rstrip('/')}/intervals/trials".removeprefix("s3://"))
+            for path in nwb_paths[prev:i]
+        ) / 1e6
+
+        start_ns = perf_counter_ns()
+        lazynwb.get_df(nwb_paths[0:i], 'intervals/trials')
+        stop_ns = perf_counter_ns()
+
+        x_tables.append(i)
+        x_mb.append(x_mb[-1] + batch_mb)
+        y_data.append((stop_ns - start_ns) / 1_000_000_000)
+        logger.debug("Loaded %.2f MB of trials tables from %s tables (%d-%d).", batch_mb, i - prev, prev, i - 1)
+        prev = i
+
+    return [
+        {
+            "name": f"Load {n} Trials Tables",
+            "x": x_tables,
+            "x_label": "tables loaded",
+            "y": y_data,
+            "y_label": "load time (s)",
+        },
+        {
+            "name": f"Load {n} Trials Tables (MB)",
+            "x": x_mb,
+            "x_label": "MB loaded",
+            "y": y_data,
+            "y_label": "load time (s)",
+        },
+    ]
 #endregion
 
 #region Runtime Configuration
