@@ -156,14 +156,12 @@ def _load_multiple_trials_tables(nwb_paths: list[str]) -> list[dict[str, Any]]:
     ]
 
 def _prepare_time_metric_data(x: list, y:list) -> dict[str, Any]:
-    x_data = [0]
-    y_data = [0]
-
     n_points = len(x)
     step = 100 if n_points >= 200 else 10 if n_points >= 20 else 1
-    y_data = [sum(y[:k]) for k in range(step, n_points + 1, step)]
-    x_data = x[step - 1::step]
-    return {"x": x_data, "y": y_data}
+    return {
+        "x": x[::step],
+        "y": [sum(y[:k + 1]) for k in range(0, n_points, step)],
+    }
 #endregion
 
 
