@@ -256,8 +256,8 @@ def _prepare_time_metric_data(x: list, y:list) -> dict[str, Any]:
 
     n_points = len(x)
     step = 100 if n_points >= 200 else 10 if n_points >= 20 else 1
-    x_data = [sum(x[:k]) for k in range(step, n_points + 1, step)]
-    y_data = y[step - 1::step]
+    y_data = [sum(y[:k]) for k in range(step, n_points + 1, step)]
+    x_data = x[step - 1::step]
     return {"x": x_data, "y": y_data}
 #endregion
 

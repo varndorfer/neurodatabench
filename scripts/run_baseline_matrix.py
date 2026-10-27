@@ -10,7 +10,7 @@
 # neurodatabench = { git = "https://github.com/bjhardcastle/neurodatabench" }
 # ///
 
-"""Run the default NeuroDataBench implementation matrix."""
+"""Run the baseline NeuroDataBench implementation matrix."""
 
 from __future__ import annotations
 
@@ -38,7 +38,6 @@ def find_repo_root(script_path: Path) -> Path:
 REPO_ROOT = find_repo_root(Path(__file__))
 
 BENCHMARK = "baseline_nwb_zarr_v0"
-H5PY_REMOTE_FILE_BACKENDS = ("remfile", "s3fs", "obstore")
 CACHE_STATUSES: tuple[neurodatabench.models.LocalCacheState, ...] = ("cold",)
 
 

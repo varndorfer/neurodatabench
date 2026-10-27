@@ -21,8 +21,8 @@ _LEADERBOARD_SERIES_COLORS = [
     "#d97706",
     "#e11d48",
     "#7c3aed",
-    "#2563eb",
     "#0f766e",
+    "#2563eb",
 ]
 _DASHBOARD_COLORS: dict[str, str] = {
     "timing": "#d97706",
@@ -324,51 +324,30 @@ def _leaderboard_metrics_rows(
     metric_rows: list[dict[str, object]] = []
     for leaderboard_row in leaderboard_rows:
         run_dir = results_dir / str(leaderboard_row["result_dir"])
+
         try:
             metrics = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             logger.debug("Skipping unreadable metrics.json in %s.", run_dir)
             continue
-        if not isinstance(metrics, dict):
-            continue
-        profile_series = (
-            f"{leaderboard_row['implementation_id']} "
-            f"[{leaderboard_row['source_types']}]"
-        )
+
         for metric_name, metric in metrics.items():
-            if not isinstance(metric, dict):
-                continue
             x_data = metric.get("x_data")
             y_data = metric.get("y_data")
-            if not isinstance(x_data, list) or not isinstance(y_data, list):
-                continue
             previous_stop_seconds = 0.0
-            n_points = min(len(x_data), len(y_data))
-            # Thin dense series for plotting; cumulative time still sums every point.
-            step = 100 if n_points >= 200 else 10 if n_points >= 20 else 1
-            logger.debug(
-                "Plotting every %d of %d points for %s / %s.",
-                step,
-                n_points,
-                profile_series,
-                metric_name,
-            )
-            for m, (x_value, y_value) in enumerate(zip(x_data, y_data)):
-                load_elapsed_seconds = float(y_value or 0.0)
-                stop_seconds = previous_stop_seconds + load_elapsed_seconds
-                if m % step == 0 or m == n_points - 1:
-                    metric_rows.append(
-                        {
-                            "profile_series": profile_series,
-                            "metric": str(metric_name),
-                            "x_label": str(metric.get("x_label", "")),
-                            "y_label": str(metric.get("y_label", "")),
-                            "x": x_value,
-                            "start_seconds": previous_stop_seconds,
-                            "stop_seconds": stop_seconds,
-                            "elapsed_seconds": load_elapsed_seconds,
-                        }
-                    )
+            
+            for m in range(len(x_data)):
+                stop_seconds = float(y_data[m])
+                elapsed_seconds = stop_seconds - previous_stop_seconds
+                metric_rows.append(
+                    {
+                        "x": x_data[m],
+                        "start_seconds": previous_stop_seconds,
+                        "stop_seconds": stop_seconds,
+                        "elapsed_seconds": elapsed_seconds,
+                        "metric": f"{metric_name}",
+                    }
+                )
                 previous_stop_seconds = stop_seconds
     return metric_rows
 
